@@ -3,11 +3,11 @@ package spdy
 import (
 	"bufio"
 	"crypto/tls"
-	"github.com/kevin-yuan/burrow/spdy/framing"
-	"github.com/kevin-yuan/burrow/spdy/framing/fields"
-	//"farproc/burrow/spdy/util"
 	"errors"
 	"fmt"
+	"github.com/kevin-yuan/burrow/spdy/framing"
+	"github.com/kevin-yuan/burrow/spdy/framing/fields"
+	"github.com/kevin-yuan/burrow/spdy/util"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"sync"
 )
+
+const maxFramePriority byte = 0xFF
 
 func TLSNextProtoFuncV2(server *http.Server, tlsConn *tls.Conn, handler http.Handler) {
 	(&conn{Version: 2, Server: server, Conn: tlsConn, Handler: handler}).Serve()
@@ -52,6 +54,14 @@ type stream struct {
 	halfClosed     bool  // Half closed.
 	Reader         *pipe // Reader.reader can be used to read the request if ingoing.
 	//sendFCW        *util.FlowCtrlWin
+}
+
+func (s *stream) TakePrecedenceOver(other util.PriorityItem) bool {
+	otherStream := other.(*stream)
+	if s.Priority == otherStream.Priority {
+		return s.ID < otherStream.ID
+	}
+	return s.Priority > otherStream.Priority
 }
 
 func (s *stream) PeerHalfClosed() bool {
@@ -105,10 +115,10 @@ type conn struct {
 	encoderr       *fields.Encoder
 	exit           chan bool
 
-	streamQ          *blockingStreamPriorityQ
+	streamQ          *util.BlockingPriorityQueue
 	lastGoodStreamID uint32
 
-	framesToWrite *blockingFramePriorityQ
+	framesToWrite *util.BlockingPriorityQueue
 
 	// sort.Sort is not stable, we need an sequence number.
 	// This lock protects the following seq.
@@ -134,8 +144,8 @@ func (c *conn) Serve() {
 	c.decoder.SetZlibDict(dict)
 	c.encoderr = fields.NewEncoder(c.w)
 	c.exit = make(chan bool)
-	c.streamQ = newBlockingStreamPriorityQ(recvFrameBufSize)
-	c.framesToWrite = newBlockingFamePriorityQQ(sendFrameBufSize)
+	c.streamQ = util.NewBlockingPriorityQueue(recvFrameBufSize)
+	c.framesToWrite = util.NewBlockingPriorityQueue(sendFrameBufSize)
 
 	log.Printf("SPDY connection created. Remote Addr: %v\n", c.Conn.RemoteAddr())
 
@@ -381,7 +391,7 @@ func (c *conn) push(associated *stream, priority byte, r *http.Request) (err err
 func (c *conn) serveLoop() {
 loop:
 	for {
-		stream := c.streamQ.Pop()
+		stream := c.streamQ.Pop().(*stream)
 		if stream == nil {
 			break loop
 		}
@@ -471,7 +481,7 @@ func (c *conn) writeLoop() {
 	var err error
 loop:
 	for {
-		f := c.framesToWrite.Pop()
+		f := c.framesToWrite.Pop().(*frameWithPriority)
 		if f.Frame == nil {
 			break loop
 		}
@@ -490,4 +500,18 @@ loop:
 		logFunc("SPDY write error: %v\n", err)
 	}
 	c.exit <- true
+}
+
+type frameWithPriority struct {
+	Priority byte
+	Seq      uint32
+	Frame    framing.Frame
+}
+
+func (f *frameWithPriority) TakePrecedenceOver(other util.PriorityItem) bool {
+	otherFrame := other.(*frameWithPriority)
+	if f.Priority == otherFrame.Priority {
+		return f.Seq < otherFrame.Seq
+	}
+	return f.Priority > otherFrame.Priority
 }

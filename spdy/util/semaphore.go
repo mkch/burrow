@@ -1,4 +1,4 @@
-package spdy
+package util
 
 import (
 	"sync"
