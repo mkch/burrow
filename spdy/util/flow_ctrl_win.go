@@ -2,7 +2,7 @@ package util
 
 import (
 	"errors"
-	"farproc/burrow/spdy/framing"
+	"github.com/kevin-yuan/burrow/spdy/framing"
 	"log"
 	"sync"
 )
