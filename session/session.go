@@ -161,28 +161,6 @@ func (s *SessionManager) prepare(w http.ResponseWriter, r *http.Request) (sessio
 }
 
 // Handler wrapps a http.Handler to do session management.
-//
-// Example:
-//	import (
-//		"farproc/burrow/session"
-//		"fmt"
-//		"log"
-//		"net/http"
-//	)
-//
-//	var sessionManager = session.NewSessionManager()
-//
-//	func main() {
-//		log.Println("Starting web server...")
-//
-//		http.Handle("/foo", session.HTTPHandlerFunc(fooHandler))
-//
-//		log.Fatal(http.ListenAndServe(":8080", sessionManager.Handler(http.DefaultServeMux)))
-//	}
-//
-//	func fooHandler(w http.ResponseWriter, r *http.Request, s session.Session) {
-//		// Access session value with s.
-//	}
 func (s *SessionManager) Handler(handler http.Handler) http.Handler {
 	return &handlerHook{manager: s, handler: handler}
 }
