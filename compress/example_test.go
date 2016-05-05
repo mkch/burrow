@@ -1,7 +1,7 @@
 package compress_test
 
 import (
-	"github.com/kevin-yuan/burrow/compress"
+	"github.com/mkch/burrow/compress"
 	"net/http"
 )
 

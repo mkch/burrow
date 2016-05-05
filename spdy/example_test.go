@@ -2,7 +2,7 @@ package spdy_test
 
 import (
 	"crypto/tls"
-	"github.com/kevin-yuan/burrow/spdy"
+	"github.com/mkch/burrow/spdy"
 	"log"
 	"net/http"
 )

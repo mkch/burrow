@@ -2,7 +2,7 @@ package framing
 
 import (
 	"errors"
-	"github.com/kevin-yuan/burrow/spdy/framing/fields"
+	"github.com/mkch/burrow/spdy/framing/fields"
 	"io"
 )
 

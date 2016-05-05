@@ -1,7 +1,7 @@
 package spdy
 
 import (
-	"github.com/kevin-yuan/burrow/spdy/framing"
+	"github.com/mkch/burrow/spdy/framing"
 	"net/http"
 	"net/url"
 	"sync"

@@ -2,7 +2,7 @@ package util
 
 import (
 	"errors"
-	"github.com/kevin-yuan/burrow/spdy/framing"
+	"github.com/mkch/burrow/spdy/framing"
 	"log"
 	"sync"
 )

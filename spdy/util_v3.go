@@ -3,7 +3,7 @@ package spdy
 import (
 	"bytes"
 	"errors"
-	"github.com/kevin-yuan/burrow/spdy/framing"
+	"github.com/mkch/burrow/spdy/framing"
 	"log"
 	"net/http"
 	"net/url"

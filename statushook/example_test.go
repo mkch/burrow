@@ -2,7 +2,7 @@ package statushook_test
 
 import (
 	"fmt"
-	"github.com/kevin-yuan/burrow/statushook"
+	"github.com/mkch/burrow/statushook"
 	"log"
 	"net/http"
 )

@@ -3,14 +3,14 @@ Burrow for gophers.
 Toolkit for go net/http.
 
 ## Install
-	go get github.com/kevin-yuan/burrow
-	go install github.com/kevin-yuan/burrow
+	go get github.com/mkch/burrow
+	go install github.com/mkch/burrow
 ## Examples
 ### * Compress
 	package compress_test
 	
 	import (
-	    "github.com/kevin-yuan/burrow/compress"
+	    "github.com/mkch/burrow/compress"
 	    "net/http"
 	)
 	
@@ -21,7 +21,7 @@ Toolkit for go net/http.
 	package session_test
 	
 	import (
-		"github.com/kevin-yuan/burrow/session"
+		"github.com/mkch/burrow/session"
 		"net/http"
 	)
 	
@@ -39,7 +39,7 @@ Toolkit for go net/http.
 	package statushook_test
 	
 	import (
-		"github.com/kevin-yuan/burrow/statushook"
+		"github.com/mkch/burrow/statushook"
 		"net/http"
 	)
 	
@@ -67,7 +67,7 @@ Toolkit for go net/http.
 	
 	import (
 		"crypto/tls"
-		"github.com/kevin-yuan/burrow/spdy"
+		"github.com/mkch/burrow/spdy"
 		"net/http"
 	)
 	

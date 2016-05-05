@@ -1,7 +1,7 @@
 package session_test
 
 import (
-	"github.com/kevin-yuan/burrow/session"
+	"github.com/mkch/burrow/session"
 	"log"
 	"net/http"
 )
