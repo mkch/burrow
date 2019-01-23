@@ -340,7 +340,7 @@ func Handler(h http.Handler, policy MimePolicy, encFactory EncodingFactory) http
 			cw := newResponseWriterCached(w, policy, writerFactory, encoding)
 			defer func() {
 				if err := cw.Close(); err != nil {
-					log.Fatal("Colse responseWriter failed: %v\n", err)
+					log.Fatalf("Colse responseWriter failed: %v\n", err)
 				}
 				returnResponseWriterToCache(cw)
 			}()
