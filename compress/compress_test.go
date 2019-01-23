@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -37,46 +38,65 @@ func TestDefaultCompressEncodingFactory(t *testing.T) {
 	}
 }
 
+var largeString = strings.Repeat("abc", 1024)
+
 func TestResponseWriter(t *testing.T) {
 	t.Parallel()
 	/// flate
-	test := &test{
-		writerFactory:   DefaultDeflateWriterFactory,
-		mimePolicy:      DefaultMimePolicy,
-		contentEncoding: "deflate",
-		newDecompressor: func(r io.Reader) io.ReadCloser { return flate.NewReader(r) },
-		data:            []byte("some text to test."),
-		contentType:     "text/plain",
+	{
+		test := &test{
+			writerFactory:   DefaultDeflateWriterFactory,
+			mimePolicy:      DefaultMimePolicy,
+			contentEncoding: "deflate",
+			newDecompressor: func(r io.Reader) io.ReadCloser { return flate.NewReader(r) },
+			data:            []byte("some text to test."),
+			contentType:     "text/plain",
+		}
+		testResponseWriter(t, test)
+
+		test.data = []byte(largeString)
+		testResponseWriter(t, test)
+
+		test.contentEncoding = "x-known"
+		testResponseWriter(t, test)
+
+		test.data = []byte("some text to test.")
+		test.contentType = "text/plain"
+		test.contentEncoding = ""
+		testResponseWriter(t, test)
+
+		test.data = nil
+		test.contentType = ""
+		testResponseWriter(t, test)
 	}
-	testResponseWriter(t, test)
-
-	test.contentEncoding = "x-known"
-	testResponseWriter(t, test)
-
-	test.data = []byte("<html>")
-	test.contentType = ""
-	testResponseWriter(t, test)
-
-	test.data = nil
-	test.contentType = ""
-	testResponseWriter(t, test)
 
 	/// gzip
-	test.writerFactory = DefaultGzipWriterFactory
-	test.contentEncoding = "gzip"
-	test.newDecompressor = func(r io.Reader) io.ReadCloser { reader, _ := gzip.NewReader(r); return reader }
-	testResponseWriter(t, test)
+	{
+		test := &test{
+			writerFactory:   DefaultGzipWriterFactory,
+			mimePolicy:      DefaultMimePolicy,
+			contentEncoding: "gzip",
+			newDecompressor: func(r io.Reader) io.ReadCloser { reader, _ := gzip.NewReader(r); return reader },
+			data:            []byte("some text to test."),
+			contentType:     "text/plain",
+		}
+		testResponseWriter(t, test)
 
-	test.contentEncoding = "x-known"
-	testResponseWriter(t, test)
+		test.data = []byte(largeString)
+		testResponseWriter(t, test)
 
-	test.data = []byte("<html>")
-	test.contentType = ""
-	testResponseWriter(t, test)
+		test.contentEncoding = "x-known"
+		testResponseWriter(t, test)
 
-	test.data = nil
-	test.contentType = ""
-	testResponseWriter(t, test)
+		test.data = []byte("some text to test.")
+		test.contentType = "text/plain"
+		test.contentEncoding = ""
+		testResponseWriter(t, test)
+
+		test.data = nil
+		test.contentType = ""
+		testResponseWriter(t, test)
+	}
 
 }
 
@@ -99,7 +119,8 @@ func (n *NoClose) Close() error {
 
 func testResponseWriter(t *testing.T, test *test) {
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriter(recorder, test.mimePolicy, test.writerFactory, test.contentEncoding)
+	w := newResponseWriterCached(recorder, test.mimePolicy, test.writerFactory, test.contentEncoding)
+	defer returnResponseWriterToCache(w)
 	// Write
 	w.Header().Set(ContentTypeHeader, test.contentType)
 	n, err := w.Write(test.data)

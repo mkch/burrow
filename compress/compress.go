@@ -223,6 +223,7 @@ func (w *responseWriter) Reset(respw http.ResponseWriter, policy MimePolicy, fac
 	w.contentEncoding = contentEncoding
 	w.headerWritten = false
 	w.buf = w.buf[:0]
+	w.buffered = false
 	w.w = nil
 	w.c = nil
 }
