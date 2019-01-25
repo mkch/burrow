@@ -3,6 +3,7 @@ package compress
 import (
 	"compress/flate"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -13,7 +14,7 @@ const ContentTypeHeader = "Content-Type"
 const ContentEncodingHeader = "Content-Encoding"
 const AcceptEncodingHeader = "Accept-Encoding"
 
-// Objects implementing the MimePolicy interface can be used to determine what
+// MimePolicy interface can be used to determine what
 // MIME types are allowed to be compressed.
 //
 // See Handler function for details.
@@ -32,7 +33,7 @@ func (f MimePolicyFunc) AllowCompress(mime string) bool {
 	return f(mime)
 }
 
-// Default MimePolicy is the default mime policy that allows some of the common
+// DefaultMimePolicy is the default mime policy that allows some of the common
 // data types which should be compressed.
 var DefaultMimePolicy = MimePolicyFunc(func(mime string) bool {
 	switch mime {
@@ -49,36 +50,35 @@ var DefaultMimePolicy = MimePolicyFunc(func(mime string) bool {
 	}
 })
 
-// Objects implementing the WriterFactory can be used to create new
-// writer.
+// WriterFactory creates new WriteCloser.
 type WriterFactory interface {
-	NewWriter(http.ResponseWriter) (io.WriteCloser, error)
+	NewWriter(io.Writer) (io.WriteCloser, error)
 }
 
 // The WriterFactoryFunc type is an adapter to allow the use of
 // ordinary functions as WriterFactory. If f is a function with the
 // appropriate signature, WriterFactoryFunc(f) is a WriterFactory
 // object that calls f.
-type WriterFactoryFunc func(http.ResponseWriter) (io.WriteCloser, error)
+type WriterFactoryFunc func(io.Writer) (io.WriteCloser, error)
 
 // NewWriter calls f(w).
-func (f WriterFactoryFunc) NewWriter(w http.ResponseWriter) (io.WriteCloser, error) {
+func (f WriterFactoryFunc) NewWriter(w io.Writer) (io.WriteCloser, error) {
 	return f(w)
 }
 
 // DefaultGzipWriterFactory is the default compress factory using "gzip" encoding.
 var DefaultGzipWriterFactory WriterFactory = WriterFactoryFunc(
-	func(w http.ResponseWriter) (io.WriteCloser, error) {
+	func(w io.Writer) (io.WriteCloser, error) {
 		return gzip.NewWriter(w), nil
 	})
 
-// DefaultGzipWriterFactory is the default compress factory using "deflate" encoding.
+// DefaultDeflateWriterFactory is the default compress factory using "deflate" encoding.
 var DefaultDeflateWriterFactory WriterFactory = WriterFactoryFunc(
-	func(w http.ResponseWriter) (io.WriteCloser, error) {
+	func(w io.Writer) (io.WriteCloser, error) {
 		return flate.NewWriter(w, -1)
 	})
 
-// Objects implementing the EncodingFactory can be used to create new
+// EncodingFactory is the interfact to create new
 // WriterFactory according to the "Accept-Encoding".
 type EncodingFactory interface {
 	// NewWriterFactory returns a WriterFactory and it's content encoding that
@@ -162,35 +162,217 @@ var DefaultEncodingFactory = EncodingFactoryFunc(func(acceptEncoding string) (wf
 	//return nil, ""
 })
 
+type prefixWriteCloser interface {
+	io.WriteCloser
+	// WritePrefix writes the prefix(the first part of data).
+	// It should be called zero or one time before any call to Writer.Write.
+	WritePrefix([]byte) (n int, err error)
+}
+
+type prefixDefinedWriter struct {
+	prefix    []byte
+	prefixLen int
+	w         prefixWriteCloser // The destination writer. Nil if pWriter was closed.
+}
+
+// newPrefixDefinedWriter creates a prefixDefinedWriter which writes the first prefixLen bytes
+// with writer.WritePrefix and writes any bytes following with writer.Write.
+func newPrefixDefinedWriter(writer prefixWriteCloser, prefixLen int) *prefixDefinedWriter {
+	if prefixLen <= 0 {
+		panic(fmt.Errorf("definePrefix: invalid prefixLen %v", prefixLen))
+	}
+	if writer == nil {
+		panic(fmt.Errorf("definePrefix: nil writer"))
+	}
+	return &prefixDefinedWriter{
+		prefixLen: prefixLen,
+		prefix:    make([]byte, 0, prefixLen),
+		w:         writer}
+}
+
+// Reset discards the prefixDefinedWriter's state and makes it equivalent
+// to the result of its original state from newPrefixDefinedWriter.
+// This permits reusing a prefixDefinedWriter rather than allocating a new one.
+func (w *prefixDefinedWriter) Reset(writer prefixWriteCloser, prefixLen int) {
+	if prefixLen <= 0 {
+		panic(fmt.Errorf("pWriter.Reset: invalid prefixLen %v", prefixLen))
+	}
+	if writer == nil {
+		panic(fmt.Errorf("pWriter.Reset: nil writer"))
+	}
+	w.prefixLen = prefixLen
+	if cap(w.prefix) >= prefixLen {
+		w.prefix = w.prefix[:0]
+	} else {
+		w.prefix = make([]byte, 0, prefixLen)
+	}
+	w.w = writer
+}
+
+func (w *prefixDefinedWriter) Write(p []byte) (int, error) {
+	size := len(p)
+	if size == 0 {
+		return 0, nil
+	}
+	avail := w.prefixLen - len(w.prefix)
+	if avail == 0 {
+		// w.w.WritePrefix has been called already.
+		return w.w.Write(p)
+	} else if avail >= size {
+		// Not enough bytes for prefix.
+		w.prefix = append(w.prefix, p...)
+		return size, nil
+	} else {
+		w.prefix = append(w.prefix, p[:avail]...)
+		n, err := w.w.WritePrefix(w.prefix)
+		pWritten := n - (w.prefixLen - avail)
+		if err != nil {
+			if pWritten < 0 {
+				// No data of p was written.
+				pWritten = 0
+			}
+			return pWritten, err
+		}
+		n, err = w.w.Write(p[avail:])
+		return n + pWritten, err
+	}
+}
+
+func (w *prefixDefinedWriter) Close() (err error) {
+	if w.w == nil {
+		// Already closed.
+		return
+	}
+	if w.prefixLen > len(w.prefix) {
+		_, err = w.w.WritePrefix(w.prefix)
+		if err != nil {
+			return
+		}
+	}
+	err = w.w.Close()
+	w.w = nil
+	return
+}
+
+type mimeWriter struct {
+	header http.Header
+	w      io.WriteCloser
+}
+
+func (w *mimeWriter) Reset(header http.Header, writer io.WriteCloser) {
+	w.header = header
+	w.w = writer
+}
+
+func (w *mimeWriter) WritePrefix(p []byte) (int, error) {
+	contentType := w.header.Get(ContentTypeHeader)
+	if contentType == "" {
+		contentType = http.DetectContentType(p)
+		// Write header with detected MIME type.
+		w.header.Set(ContentTypeHeader, contentType)
+	}
+	return w.Write(p)
+}
+
+func (w *mimeWriter) Write(p []byte) (int, error) {
+	return w.w.Write(p)
+}
+
+func (w *mimeWriter) Close() error {
+	return w.w.Close()
+}
+
+type compresser io.WriteCloser
+
+type compressWriter struct {
+	compresser      compresser
+	factory         WriterFactory
+	orig            http.ResponseWriter
+	contentEncoding string
+	mimePolichy     MimePolicy
+	atLeast         int
+}
+
+func (w *compressWriter) Reset(factory WriterFactory, orig http.ResponseWriter, contentEncoding string, mimePolicy MimePolicy, atLeast int) {
+	w.compresser = nil
+	w.factory = factory
+	w.orig = orig
+	w.contentEncoding = contentEncoding
+	w.mimePolichy = mimePolicy
+	w.atLeast = atLeast
+}
+
+func (w *compressWriter) WritePrefix(p []byte) (int, error) {
+	if len(p) >= w.atLeast {
+		if w.orig.Header().Get(ContentEncodingHeader) != "" {
+			return w.orig.Write(p)
+		}
+		if w.mimePolichy.AllowCompress(w.orig.Header().Get(ContentTypeHeader)) {
+			var err error
+			if w.compresser, err = w.factory.NewWriter(w.orig); err != nil {
+				return 0, err
+			}
+			w.orig.Header().Set(ContentEncodingHeader, w.contentEncoding)
+		}
+	}
+	return w.Write(p)
+}
+
+func (w *compressWriter) Write(p []byte) (int, error) {
+	if w.compresser != nil {
+		return w.compresser.Write(p)
+	}
+	return w.orig.Write(p)
+}
+
+func (w *compressWriter) Close() error {
+	if w.compresser != nil {
+		return w.compresser.Close()
+	}
+	return nil
+}
+
 type responseWriter struct {
 	respw           http.ResponseWriter
 	policy          MimePolicy
 	factory         WriterFactory
 	contentEncoding string
 	headerWritten   bool
-	// Buffer for minSizeToCompress in newResponseWriter() function.
-	// See Write method.
-	buf []byte
-	// Whether buf is not needed.
-	buffered bool
 
-	// The final writer. Nil: not determined Non-nil: the final writer to use,
-	// eithre http.Response it self or its gzip.Writer wrapper.
-	w io.Writer
-	c io.Closer
+	w        *prefixDefinedWriter
+	mime     mimeWriter
+	cw       *prefixDefinedWriter
+	compress compressWriter
 }
 
-// Only responses with larger body length than MinSizeToCompress are compressed.
-// Small data is not worth compressing.
-const MinSizeToCompress = 256
+const mimeDetectBufLen = 512
 
-func newResponseWriter(w http.ResponseWriter, policy MimePolicy, factory WriterFactory, contentEncoding string) *responseWriter {
-	return &responseWriter{
+func newResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, factory WriterFactory, contentEncoding string, minSizeToCompress int) (result *responseWriter) {
+	result = &responseWriter{
 		respw:           w,
-		policy:          policy,
+		policy:          mimePolicy,
 		factory:         factory,
-		contentEncoding: contentEncoding,
-		buf:             make([]byte, 0, MinSizeToCompress)}
+		contentEncoding: contentEncoding}
+
+	result.compress.Reset(factory, w, contentEncoding, mimePolicy, minSizeToCompress)
+	result.cw = newPrefixDefinedWriter(&result.compress, minSizeToCompress)
+	result.mime.Reset(w.Header(), result.cw)
+	result.w = newPrefixDefinedWriter(&result.mime, mimeDetectBufLen)
+	return
+
+}
+
+func (w *responseWriter) Reset(respw http.ResponseWriter, mimePolicy MimePolicy, factory WriterFactory, contentEncoding string, minSizeToCompress int) {
+	w.respw = respw
+	w.policy = mimePolicy
+	w.factory = factory
+	w.contentEncoding = contentEncoding
+	w.headerWritten = false
+
+	w.compress.Reset(factory, respw, w.contentEncoding, mimePolicy, minSizeToCompress)
+	w.cw.Reset(&w.compress, minSizeToCompress)
+	w.mime.Reset(w.Header(), w.cw)
+	w.w.Reset(&w.mime, mimeDetectBufLen)
 }
 
 const responseWriterCacheSize = 1024
@@ -198,12 +380,12 @@ const responseWriterCacheSize = 1024
 var responseWriterCache = make(chan *responseWriter, responseWriterCacheSize)
 
 // newResponseWriterCached returns a cached responseWriter if any available, or newly created one.
-func newResponseWriterCached(w http.ResponseWriter, policy MimePolicy, factory WriterFactory, contentEncoding string) (writer *responseWriter) {
+func newResponseWriterCached(w http.ResponseWriter, mimePolicy MimePolicy, factory WriterFactory, contentEncoding string, minSizeToCompress int) (writer *responseWriter) {
 	select {
 	case writer = <-responseWriterCache:
-		writer.Reset(w, policy, factory, contentEncoding)
+		writer.Reset(w, mimePolicy, factory, contentEncoding, minSizeToCompress)
 	default:
-		writer = newResponseWriter(w, policy, factory, contentEncoding)
+		writer = newResponseWriter(w, mimePolicy, factory, contentEncoding, minSizeToCompress)
 	}
 	return
 }
@@ -216,107 +398,15 @@ func returnResponseWriterToCache(writer *responseWriter) {
 	}
 }
 
-func (w *responseWriter) Reset(respw http.ResponseWriter, policy MimePolicy, factory WriterFactory, contentEncoding string) {
-	w.respw = respw
-	w.policy = policy
-	w.factory = factory
-	w.contentEncoding = contentEncoding
-	w.headerWritten = false
-	w.buf = w.buf[:0]
-	w.buffered = false
-	w.w = nil
-	w.c = nil
-}
-
 func (w *responseWriter) Header() http.Header {
 	return w.respw.Header()
 }
 
 func (w *responseWriter) Close() (err error) {
-	// Write any buffering data if any.
-	if !w.buffered && len(w.buf) > 0 {
-		_, err = w.write(w.buf, true)
-		return err
-	}
-	if w.c != nil {
-		err := w.c.Close()
-		return err
-	}
-	return nil
+	return w.w.Close()
 }
 
 func (w *responseWriter) Write(data []byte) (int, error) {
-	origDataLen := len(data)
-	if origDataLen == 0 {
-		return 0, nil
-	}
-	// buf is not needed. Write through.
-	if w.buffered {
-		return w.write(data, false)
-	}
-	// Get available space. Never grow over capaticy.
-	avail := cap(w.buf) - len(w.buf)
-	if len(data) <= avail {
-		// Write all to buf.
-		w.buf = append(w.buf, data...)
-		data = nil
-		return origDataLen, nil
-	} else {
-		// Fill up buf.
-		w.buf = append(w.buf, data[:avail]...)
-		data = data[avail:]
-		// Write buf.
-		n, err := w.write(w.buf, false)
-		if err != nil {
-			copy(w.buf, w.buf[n:])
-			w.buf = w.buf[:cap(w.buf)-n]
-			return avail, err
-		}
-		// buf is no longer needed.
-		w.buffered = true
-		// Write remaining data.
-		n, err = w.write(data, false)
-		if err != nil {
-			return avail + n, err
-		}
-		return origDataLen, nil
-	}
-}
-
-func (w *responseWriter) write(data []byte, final bool) (int, error) {
-	// The final writter is determined, just write to it.
-	if w.w != nil {
-		return w.w.Write(data)
-	}
-
-	// "Content-Encoding" has been written or set by client code. Respect it.
-	if w.headerWritten || w.respw.Header().Get(ContentEncodingHeader) != "" {
-		w.w = w.respw
-		return w.w.Write(data)
-	}
-
-	contentType := w.respw.Header().Get(ContentTypeHeader)
-	if contentType == "" {
-		contentType = http.DetectContentType(data)
-		// Write header with detected MIME type.
-		w.respw.Header().Set(ContentTypeHeader, contentType)
-	}
-
-	// Compress or not.
-	// If final is true, there is no enough data to fill the buffer until
-	// responseWriter.Close() is called, so the whole response is smaller than
-	// minSizeToCompress of newResponseWriter(). Do not compress.
-	if !final && w.policy.AllowCompress(contentType) {
-		w.respw.Header().Set(ContentEncodingHeader, w.contentEncoding)
-		witeCloser, err := w.factory.NewWriter(w.respw)
-		if err != nil {
-			return 0, err
-		}
-		w.w = witeCloser
-		w.c = witeCloser
-	} else {
-		w.w = w.respw
-	}
 	return w.w.Write(data)
 }
 
@@ -325,20 +415,23 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	w.headerWritten = true
 }
 
+// DefaultMinSizeToCompress is the default minimum body size to enable compression.
+const DefaultMinSizeToCompress = 1024
+
 // Handler function wraps a http handler to use http compression.
-// policy determines what MIME types are allowed to be compressed, DefaultMimePolicy
+// mimePolicy determines what MIME types are allowed to be compressed, DefaultMimePolicy
 // if nill.
 // encFactory is used to create WriterFactory, DefaultEncodingFactoryif nil.
-func Handler(h http.Handler, policy MimePolicy, encFactory EncodingFactory) http.Handler {
-	if policy == nil {
-		policy = DefaultMimePolicy
+func Handler(h http.Handler, mimePolicy MimePolicy, encFactory EncodingFactory) http.Handler {
+	if mimePolicy == nil {
+		mimePolicy = DefaultMimePolicy
 	}
 	if encFactory == nil {
 		encFactory = DefaultEncodingFactory
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if writerFactory, encoding := encFactory.NewWriterFactory(r.Header.Get(AcceptEncodingHeader)); writerFactory != nil && encoding != "" {
-			cw := newResponseWriterCached(w, policy, writerFactory, encoding)
+			cw := newResponseWriterCached(w, mimePolicy, writerFactory, encoding, DefaultMinSizeToCompress)
 			defer func() {
 				if err := cw.Close(); err != nil {
 					log.Fatalf("Colse responseWriter failed: %v\n", err)

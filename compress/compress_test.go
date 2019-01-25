@@ -38,7 +38,7 @@ func TestDefaultCompressEncodingFactory(t *testing.T) {
 	}
 }
 
-var largeString = strings.Repeat("abc", 1024)
+var largeString = strings.Repeat("abc", DefaultMinSizeToCompress)
 
 func TestResponseWriter(t *testing.T) {
 	t.Parallel()
@@ -119,7 +119,7 @@ func (n *NoClose) Close() error {
 
 func testResponseWriter(t *testing.T, test *test) {
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriterCached(recorder, test.mimePolicy, test.writerFactory, test.contentEncoding)
+	w := newResponseWriterCached(recorder, test.mimePolicy, test.writerFactory, test.contentEncoding, DefaultMinSizeToCompress)
 	defer returnResponseWriterToCache(w)
 	// Write
 	w.Header().Set(ContentTypeHeader, test.contentType)
@@ -137,14 +137,14 @@ func testResponseWriter(t *testing.T, test *test) {
 
 	//   Test Content-Type
 	contentType := test.contentType
-	if contentType == "" && len(test.data) > 0 {
+	if contentType == "" {
 		contentType = http.DetectContentType(test.data)
 	}
 	recvContentType := recorder.Header().Get(ContentTypeHeader)
 	if recvContentType != contentType {
 		t.Fatalf(`[%s]: "%s" vs. \"%s" with data %v`, ContentTypeHeader, recvContentType, contentType, test.data)
 	}
-	compress := test.mimePolicy.AllowCompress(contentType) && len(test.data) >= MinSizeToCompress
+	compress := test.mimePolicy.AllowCompress(contentType) && len(test.data) >= DefaultMinSizeToCompress
 	//   Test Content-Encoding
 	recvContentEncoding := recorder.Header().Get(ContentEncodingHeader)
 	contentEncoding := ""
