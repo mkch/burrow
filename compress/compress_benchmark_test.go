@@ -8,17 +8,14 @@ import (
 
 func BenchmarkDefaultEncodingFactory(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		var (
-			f   WriterFactory
-			enc string
-		)
-		if f, enc = DefaultEncodingFactory.NewWriterFactory(" ,gzip, deflate,	sdch"); /*f != DefaultGzipWriterFactory ||*/ enc != "gzip" {
+		var f WriterFactory
+		if f = DefaultEncodingFactory.NewWriterFactory(" ,gzip, deflate,	sdch"); f != DefaultGzipWriterFactory || f.ContentEncoding() != "gzip" {
 			b.Fatal()
 		}
-		if f, enc = DefaultEncodingFactory.NewWriterFactory(" a,   deflate"); /*f != DefaultDeflateWriterFactory ||*/ enc != "deflate" {
+		if f = DefaultEncodingFactory.NewWriterFactory(" a,   deflate"); f != DefaultDeflateWriterFactory || f.ContentEncoding() != "deflate" {
 			b.Fatal()
 		}
-		if f, enc = DefaultEncodingFactory.NewWriterFactory(""); f != nil || enc != "" {
+		if f = DefaultEncodingFactory.NewWriterFactory(""); f != nil {
 			b.Fatal()
 		}
 	}
