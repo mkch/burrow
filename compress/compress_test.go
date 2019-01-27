@@ -51,7 +51,7 @@ func TestResponseWriterDeflateNoCompress(t *testing.T) {
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
-	w.Header().Set(ContentTypeHeader, "text/plain")
+	w.Header().Set(contentTypeHeader, "text/plain")
 	n, err := w.Write(data)
 	if err != nil {
 		t.Fatalf("Write error: %v", err)
@@ -63,7 +63,7 @@ func TestResponseWriterDeflateNoCompress(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	if enc := recorder.Header().Get(ContentEncodingHeader); enc != "" {
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "" {
 		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "")
 	}
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
@@ -76,7 +76,7 @@ func TestResponseWriterDeflate(t *testing.T) {
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
-	w.Header().Set(ContentTypeHeader, "text/html")
+	w.Header().Set(contentTypeHeader, "text/html")
 	n, err := w.Write(data)
 	if err != nil {
 		t.Fatalf("Write error: %v", err)
@@ -88,7 +88,7 @@ func TestResponseWriterDeflate(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	if enc := recorder.Header().Get(ContentEncodingHeader); enc != "deflate" {
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "deflate" {
 		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "deflate")
 	}
 	if !bytes.Equal(mustReadAll(t, flate.NewReader(recorder.Body)), data) {
@@ -101,7 +101,7 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
-	w.Header().Set(ContentTypeHeader, "text/plain")
+	w.Header().Set(contentTypeHeader, "text/plain")
 	n, err := w.Write(data)
 	if err != nil {
 		t.Fatalf("Write error: %v", err)
@@ -113,7 +113,7 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	if enc := recorder.Header().Get(ContentEncodingHeader); enc != "" {
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "" {
 		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "")
 	}
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
@@ -126,7 +126,7 @@ func TestResponseWriterGzip(t *testing.T) {
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
-	w.Header().Set(ContentTypeHeader, "text/html")
+	w.Header().Set(contentTypeHeader, "text/html")
 	n, err := w.Write(data)
 	if err != nil {
 		t.Fatalf("Write error: %v", err)
@@ -138,7 +138,7 @@ func TestResponseWriterGzip(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	if enc := recorder.Header().Get(ContentEncodingHeader); enc != "gzip" {
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "gzip" {
 		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "gzip")
 	}
 	decompressor, err := gzip.NewReader(recorder.Body)

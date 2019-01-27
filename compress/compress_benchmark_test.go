@@ -24,7 +24,7 @@ func BenchmarkDefaultEncodingFactory(b *testing.B) {
 var testData = []byte("Package http provides HTTP client and server implementations.")
 var server = httptest.NewServer(DefaultHandler(http.HandlerFunc(
 	func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set(ContentTypeHeader, "text/plain")
+		w.Header().Set(contentTypeHeader, "text/plain")
 		w.Write(testData)
 	})))
 

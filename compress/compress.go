@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-const ContentTypeHeader = "Content-Type"
-const ContentEncodingHeader = "Content-Encoding"
-const AcceptEncodingHeader = "Accept-Encoding"
+const contentTypeHeader = "Content-Type"
+const contentEncodingHeader = "Content-Encoding"
+const acceptEncodingHeader = "Accept-Encoding"
 
 // MimePolicy interface can be used to determine what
 // MIME types are allowed to be compressed.
@@ -269,11 +269,11 @@ func (w *mimeWriter) Reset(header http.Header, writer io.WriteCloser) {
 }
 
 func (w *mimeWriter) WritePrefix(p []byte) (int, error) {
-	contentType := w.header.Get(ContentTypeHeader)
+	contentType := w.header.Get(contentTypeHeader)
 	if contentType == "" {
 		contentType = http.DetectContentType(p)
 		// Write header with detected MIME type.
-		w.header.Set(ContentTypeHeader, contentType)
+		w.header.Set(contentTypeHeader, contentType)
 	}
 	return w.Write(p)
 }
@@ -306,15 +306,15 @@ func (w *compressWriter) Reset(factory WriterFactory, orig http.ResponseWriter, 
 
 func (w *compressWriter) WritePrefix(p []byte) (int, error) {
 	if len(p) >= w.atLeast {
-		if w.orig.Header().Get(ContentEncodingHeader) != "" {
+		if w.orig.Header().Get(contentEncodingHeader) != "" {
 			return w.orig.Write(p)
 		}
-		if w.mimePolichy.AllowCompress(w.orig.Header().Get(ContentTypeHeader)) {
+		if w.mimePolichy.AllowCompress(w.orig.Header().Get(contentTypeHeader)) {
 			var err error
 			if w.compresser, err = w.factory.NewWriter(w.orig); err != nil {
 				return 0, err
 			}
-			w.orig.Header().Set(ContentEncodingHeader, w.factory.ContentEncoding())
+			w.orig.Header().Set(contentEncodingHeader, w.factory.ContentEncoding())
 		}
 	}
 	return w.Write(p)
@@ -430,7 +430,7 @@ func Handler(h http.Handler, mimePolicy MimePolicy, encFactory EncodingFactory) 
 		encFactory = DefaultEncodingFactory
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if writerFactory := encFactory.NewWriterFactory(r.Header.Get(AcceptEncodingHeader)); writerFactory != nil {
+		if writerFactory := encFactory.NewWriterFactory(r.Header.Get(acceptEncodingHeader)); writerFactory != nil {
 			cw := newResponseWriterCached(w, mimePolicy, writerFactory, DefaultMinSizeToCompress)
 			defer func() {
 				if err := cw.Close(); err != nil {
