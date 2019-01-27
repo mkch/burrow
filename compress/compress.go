@@ -289,18 +289,18 @@ func (w *mimeWriter) Close() error {
 type compresser io.WriteCloser
 
 type compressWriter struct {
-	compresser  compresser
-	factory     WriterFactory
-	orig        http.ResponseWriter
-	mimePolichy MimePolicy
-	atLeast     int
+	compresser compresser
+	factory    WriterFactory
+	orig       http.ResponseWriter
+	mimePolicy MimePolicy
+	atLeast    int
 }
 
 func (w *compressWriter) Reset(factory WriterFactory, orig http.ResponseWriter, mimePolicy MimePolicy, atLeast int) {
 	w.compresser = nil
 	w.factory = factory
 	w.orig = orig
-	w.mimePolichy = mimePolicy
+	w.mimePolicy = mimePolicy
 	w.atLeast = atLeast
 }
 
@@ -309,7 +309,7 @@ func (w *compressWriter) WritePrefix(p []byte) (int, error) {
 		if w.orig.Header().Get(contentEncodingHeader) != "" {
 			return w.orig.Write(p)
 		}
-		if w.mimePolichy.AllowCompress(w.orig.Header().Get(contentTypeHeader)) {
+		if w.mimePolicy.AllowCompress(w.orig.Header().Get(contentTypeHeader)) {
 			var err error
 			if w.compresser, err = w.factory.NewWriter(w.orig); err != nil {
 				return 0, err
@@ -421,7 +421,7 @@ const DefaultMinSizeToCompress = 1024
 // Handler function wraps a http handler to use http compression.
 // mimePolicy determines what MIME types are allowed to be compressed, DefaultMimePolicy
 // if nill.
-// encFactory is used to create WriterFactory, DefaultEncodingFactoryif nil.
+// encFactory is used to create WriterFactory, DefaultEncodingFactory if nil.
 func Handler(h http.Handler, mimePolicy MimePolicy, encFactory EncodingFactory) http.Handler {
 	if mimePolicy == nil {
 		mimePolicy = DefaultMimePolicy
@@ -434,7 +434,7 @@ func Handler(h http.Handler, mimePolicy MimePolicy, encFactory EncodingFactory) 
 			cw := newResponseWriterCached(w, mimePolicy, writerFactory, DefaultMinSizeToCompress)
 			defer func() {
 				if err := cw.Close(); err != nil {
-					log.Fatalf("Colse responseWriter failed: %v\n", err)
+					log.Fatalf("Close responseWriter failed: %v\n", err)
 				}
 				returnResponseWriterToCache(cw)
 			}()
