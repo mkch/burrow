@@ -34,9 +34,10 @@ func (f MimePolicyFunc) AllowCompress(mime string) bool {
 	return f(mime)
 }
 
-// DefaultMimePolicy is the default mime policy that allows some of the common
+// DefaultMimePolicy is the default MimePolicy that allows some of the common
 // data types which should be compressed.
-var DefaultMimePolicy = MimePolicyFunc(func(mime string) bool {
+var DefaultMimePolicy = defaultMimePolicy
+var defaultMimePolicy = MimePolicyFunc(func(mime string) bool {
 	switch mime {
 	case
 		"application/json",
@@ -51,37 +52,83 @@ var DefaultMimePolicy = MimePolicyFunc(func(mime string) bool {
 	}
 })
 
+// Writer interface is a compress writer.
+type Writer interface {
+	io.WriteCloser
+	Reset(w io.Writer)
+}
+
 // WriterFactory creates new WriteCloser.
 type WriterFactory interface {
-	NewWriter(io.Writer) (io.WriteCloser, error)
+	NewWriter(io.Writer) (Writer, error)
 	ContentEncoding() string
 }
 
-type defaultGzipWriterFactory struct{}
-
-func (defaultGzipWriterFactory) NewWriter(w io.Writer) (io.WriteCloser, error) {
-	return gzip.NewWriter(w), nil
+type pooledGzipWriter struct {
+	Writer
 }
 
-func (defaultGzipWriterFactory) ContentEncoding() string {
+func (w pooledGzipWriter) Close() (err error) {
+	err = w.Writer.Close()
+	(*sync.Pool)(&defaultGzipWriterFactory).Put(w)
+	return
+}
+
+type pooledGzipWriterFactory sync.Pool
+
+func (f *pooledGzipWriterFactory) NewWriter(w io.Writer) (Writer, error) {
+	if cached := (*sync.Pool)(f).Get(); cached != nil {
+		result := cached.(Writer)
+		result.Reset(w)
+		return result, nil
+	}
+	return pooledGzipWriter{Writer: gzip.NewWriter(w)}, nil
+}
+
+func (*pooledGzipWriterFactory) ContentEncoding() string {
 	return "gzip"
 }
 
-// DefaultGzipWriterFactory is the default compress factory using "gzip" encoding.
-var DefaultGzipWriterFactory WriterFactory = defaultGzipWriterFactory{}
+// Used by pooledGzipWriter.Close().
+var defaultGzipWriterFactory pooledGzipWriterFactory
 
-type defaultDeflateWriterFactory struct{}
+// DefaultGzipWriterFactory is the default WriterFactory of "gzip" encoding.
+var DefaultGzipWriterFactory = &defaultGzipWriterFactory
 
-func (defaultDeflateWriterFactory) NewWriter(w io.Writer) (io.WriteCloser, error) {
-	return flate.NewWriter(w, -1)
+type pooledDeflateWriter struct {
+	Writer
 }
 
-func (defaultDeflateWriterFactory) ContentEncoding() string {
+func (w pooledDeflateWriter) Close() (err error) {
+	err = w.Writer.Close()
+	(*sync.Pool)(&defaultDeflateWriterFactory).Put(w)
+	return
+}
+
+type pooledDeflateWriterFactory sync.Pool
+
+func (f *pooledDeflateWriterFactory) NewWriter(w io.Writer) (Writer, error) {
+	if cached := (*sync.Pool)(f).Get(); cached != nil {
+		result := cached.(Writer)
+		result.Reset(w)
+		return result, nil
+	}
+	writer, err := flate.NewWriter(w, -1)
+	if err != nil {
+		return nil, err
+	}
+	return pooledDeflateWriter{Writer: writer}, nil
+}
+
+func (*pooledDeflateWriterFactory) ContentEncoding() string {
 	return "deflate"
 }
 
-// DefaultDeflateWriterFactory is the default compress factory using "deflate" encoding.
-var DefaultDeflateWriterFactory WriterFactory = defaultDeflateWriterFactory{}
+// Used by pooledDeflateWriter.Close().
+var defaultDeflateWriterFactory pooledDeflateWriterFactory
+
+// DefaultDeflateWriterFactory is the default WriterFactory of "deflate" encoding.
+var DefaultDeflateWriterFactory = &defaultDeflateWriterFactory
 
 // EncodingFactory is the interfact to create new
 // WriterFactory according to the "Accept-Encoding".
@@ -103,12 +150,11 @@ func (f EncodingFactoryFunc) NewWriterFactory(acceptEncoding string) WriterFacto
 	return f(acceptEncoding)
 }
 
-// DefaultEncodingFactory is the default encoding factory for "gzip"
-// and "deflate".
-//
+// DefaultEncodingFactory is the default EncodingFactory for "gzip" and "deflate" encoding.
 // This factory uses the position in string as the priority of encoding selection.
 // It selects the first known encoding.
-var DefaultEncodingFactory = EncodingFactoryFunc(func(acceptEncoding string) WriterFactory {
+var DefaultEncodingFactory = defaultEncodingFactory
+var defaultEncodingFactory = EncodingFactoryFunc(func(acceptEncoding string) WriterFactory {
 	var l = len(acceptEncoding)
 	var b int = -1
 	var e int = -1
@@ -287,10 +333,8 @@ func (w *mimeWriter) Close() error {
 	return w.w.Close()
 }
 
-type compresser io.WriteCloser
-
 type compressWriter struct {
-	compresser        compresser
+	compresser        Writer
 	writerFactory     WriterFactory
 	orig              http.ResponseWriter
 	mimePolicy        MimePolicy
