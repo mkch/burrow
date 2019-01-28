@@ -50,7 +50,7 @@ func mustReadAll(t *testing.T, r io.Reader) []byte {
 func TestResponseWriterDeflateNoCompress(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
 	w.Header().Set(contentTypeHeader, "text/plain")
 	n, err := w.Write(data)
@@ -70,13 +70,12 @@ func TestResponseWriterDeflateNoCompress(t *testing.T) {
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
 		t.Fatal("Body")
 	}
-	returnResponseWriterToCache(w)
 }
 
 func TestResponseWriterDeflate(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
 	w.Header().Set(contentTypeHeader, "text/html")
 	n, err := w.Write(data)
@@ -96,13 +95,12 @@ func TestResponseWriterDeflate(t *testing.T) {
 	if !bytes.Equal(mustReadAll(t, flate.NewReader(recorder.Body)), data) {
 		t.Fatal("Body")
 	}
-	returnResponseWriterToCache(w)
 }
 
 func TestResponseWriterGzipNoCompress(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
 	w.Header().Set(contentTypeHeader, "text/plain")
 	n, err := w.Write(data)
@@ -122,13 +120,12 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
 		t.Fatal("Body")
 	}
-	returnResponseWriterToCache(w)
 }
 
 func TestResponseWriterGzip(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
 	w.Header().Set(contentTypeHeader, "text/html")
 	n, err := w.Write(data)
@@ -152,7 +149,6 @@ func TestResponseWriterGzip(t *testing.T) {
 	if !bytes.Equal(mustReadAll(t, decompressor), data) {
 		t.Fatal("Body")
 	}
-	returnResponseWriterToCache(w)
 }
 
 func TestCurlGzip(t *testing.T) {
