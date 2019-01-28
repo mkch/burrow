@@ -1,11 +1,13 @@
 package compress
 
 import (
+	"bufio"
 	"compress/flate"
 	"compress/gzip"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -379,6 +381,12 @@ func (w *compressWriter) Close() error {
 	return nil
 }
 
+// A ResponseWriter takes data written to it and writes the compressed form of that data to an underlying ResponseWriter.
+type ResponseWriter interface {
+	http.ResponseWriter
+	io.Closer
+}
+
 type responseWriter struct {
 	responseWriter http.ResponseWriter
 	mimePolicy     MimePolicy
@@ -392,7 +400,7 @@ type responseWriter struct {
 
 const mimeDetectBufLen = 512
 
-func internalNewResponseWriterRaw(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) (result *responseWriter) {
+func internalNewResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) (result *responseWriter) {
 	result = &responseWriter{
 		responseWriter: w,
 		mimePolicy:     mimePolicy,
@@ -402,22 +410,38 @@ func internalNewResponseWriterRaw(w http.ResponseWriter, mimePolicy MimePolicy, 
 	result.cw = newPrefixDefinedWriter(&result.compress, minSizeToCompress)
 	result.mime.Reset(w.Header(), result.cw)
 	result.w = newPrefixDefinedWriter(&result.mime, mimeDetectBufLen)
-	return
 
+	return
+}
+
+func internalNewHijackerResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) (result *hijackerResponseWriter) {
+	return &hijackerResponseWriter{responseWriter: *internalNewResponseWriter(w, mimePolicy, writerFactory, minSizeToCompress)}
 }
 
 var responseWriterPool sync.Pool
+var hijackerResponseWriterPool sync.Pool
 
 // newResponseWriterCached returns a cached responseWriter if any available, or newly created one.
-func newResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) (writer *responseWriter) {
+func newResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) ResponseWriter {
+	if _, ok := w.(http.Hijacker); ok {
+		// w is an http.Hijacker, the return value must be also a hijackerResponseWriter.
+		cached := hijackerResponseWriterPool.Get()
+		if cached != nil {
+			writer := cached.(*hijackerResponseWriter)
+			writer.Reset(w, mimePolicy, writerFactory, minSizeToCompress)
+			return writer
+		}
+		return internalNewHijackerResponseWriter(w, mimePolicy, writerFactory, minSizeToCompress)
+	}
+
 	cached := responseWriterPool.Get()
 	if cached != nil {
-		writer = cached.(*responseWriter)
+		writer := cached.(*responseWriter)
 		writer.Reset(w, mimePolicy, writerFactory, minSizeToCompress)
-	} else {
-		writer = internalNewResponseWriterRaw(w, mimePolicy, writerFactory, minSizeToCompress)
+		return writer
 	}
-	return
+	return internalNewResponseWriter(w, mimePolicy, writerFactory, minSizeToCompress)
+
 }
 
 func (w *responseWriter) Reset(respw http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) {
@@ -434,11 +458,16 @@ func (w *responseWriter) Header() http.Header {
 	return w.responseWriter.Header()
 }
 
-func (w *responseWriter) Close() (err error) {
+func (w *responseWriter) close() (err error) {
 	if w.w == nil {
 		return
 	}
 	err = w.w.Close()
+	return
+}
+
+func (w *responseWriter) Close() (err error) {
+	err = w.close()
 	responseWriterPool.Put(w)
 	return
 }
@@ -449,6 +478,26 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 
 func (w *responseWriter) WriteHeader(statusCode int) {
 	w.responseWriter.WriteHeader(statusCode)
+}
+
+// ResponseWriter returns the raw http.ResponseWriter.
+// For debug purpose only.
+func (w *responseWriter) ResponseWriter() http.ResponseWriter {
+	return w.responseWriter
+}
+
+type hijackerResponseWriter struct {
+	responseWriter
+}
+
+func (w *hijackerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.responseWriter.responseWriter.(http.Hijacker).Hijack()
+}
+
+func (w *hijackerResponseWriter) Close() (err error) {
+	err = w.close()
+	hijackerResponseWriterPool.Put(w)
+	return
 }
 
 // DefaultMinSizeToCompress is the default minimum body size to enable compression.
@@ -465,7 +514,9 @@ type HandlerConfig struct {
 	MinSizeToCompress int
 }
 
-// NewHandler function creates a Handler which compresses the response of h.
+// NewHandler function creates a Handler which takes response written to it
+// and then writes the compressed form of response to h if compression is enabled by config,
+// or writes the data to h as-is.
 // Parameter config specifies the way the compression performs. Nil config is
 // equivalent to &HandlerConfig{}.
 func NewHandler(h http.Handler, config *HandlerConfig) http.Handler {
@@ -498,4 +549,48 @@ func NewHandler(h http.Handler, config *HandlerConfig) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+type compressResponseWriter struct {
+	http.ResponseWriter
+	Writer
+}
+
+func (w *compressResponseWriter) Write(p []byte) (int, error) {
+	return w.Writer.Write(p)
+}
+
+type hijackerCompressResponseWriter struct {
+	compressResponseWriter
+}
+
+func (w *hijackerCompressResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.ResponseWriter.(http.Hijacker).Hijack()
+}
+
+// NewResponseWriter function creates a ResponseWriter that takes data written to it
+// and then writes the compressed form of that data to w.
+// The "Content-Encoding" header of w will be set to the return value of calling writerFactory.ContentEncoding().
+func NewResponseWriter(w http.ResponseWriter, writerFactory WriterFactory) (ResponseWriter, error) {
+	compresser, err := writerFactory.NewWriter(w)
+	if err != nil {
+		return nil, err
+	}
+	var result ResponseWriter
+	writer := compressResponseWriter{
+		ResponseWriter: w,
+		Writer:         compresser,
+	}
+	if _, ok := w.(http.Hijacker); ok {
+		result = &hijackerCompressResponseWriter{
+			compressResponseWriter: writer,
+		}
+	} else {
+		result = &compressResponseWriter{
+			ResponseWriter: w,
+			Writer:         compresser,
+		}
+	}
+	writer.Header().Set(contentEncodingHeader, writerFactory.ContentEncoding())
+	return result, nil
 }

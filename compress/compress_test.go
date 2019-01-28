@@ -243,3 +243,77 @@ func testCurl(t *testing.T, encoding string) {
 		}
 	}
 }
+
+func TestHandlerHijacker(t *testing.T) {
+	var handler = func(w http.ResponseWriter, r *http.Request) {
+		// If the raw ResponseWriter is an http.Hijacker, w must be an http.Hijacker and vice-vase.
+		if _, rawIsHijacker := w.(interface{ ResponseWriter() http.ResponseWriter }).ResponseWriter().(http.Hijacker); rawIsHijacker {
+			if _, wIsHijacker := w.(http.Hijacker); !wIsHijacker {
+				panic("Should be a Hijacker.")
+			}
+		} else {
+			if _, wIsHijacker := w.(http.Hijacker); wIsHijacker {
+				panic("Should not be a Hijacker.")
+			}
+		}
+		w.WriteHeader(200)
+	}
+	svr := httptest.NewServer(NewHandler(http.HandlerFunc(handler), nil))
+	defer svr.Close()
+
+	if response, err := http.Get(svr.URL); err != nil {
+		t.Fatal(err)
+	} else {
+		io.Copy(ioutil.Discard, response.Body)
+	}
+}
+
+func TestResponseWriterHijacker(t *testing.T) {
+	var handler = func(raw http.ResponseWriter, r *http.Request) {
+		w, _ := NewResponseWriter(raw, DefaultGzipWriterFactory)
+		// If the raw ResponseWriter is an http.Hijacker, w must be an http.Hijacker and vice-vase.
+		if _, rawIsHijacker := raw.(http.Hijacker); rawIsHijacker {
+			if _, wIsHijacker := w.(http.Hijacker); !wIsHijacker {
+				panic("Should be a Hijacker.")
+			}
+		} else {
+			if _, wIsHijacker := w.(http.Hijacker); wIsHijacker {
+				panic("Should not be a Hijacker.")
+			}
+		}
+		w.WriteHeader(200)
+	}
+	svr := httptest.NewServer(http.HandlerFunc(handler))
+	defer svr.Close()
+
+	if response, err := http.Get(svr.URL); err != nil {
+		t.Fatal(err)
+	} else {
+		io.Copy(ioutil.Discard, response.Body)
+	}
+}
+
+func TestNewResponseWriter(t *testing.T) {
+	writerFactory := DefaultDeflateWriterFactory
+	recorder := httptest.NewRecorder()
+	if w, err := NewResponseWriter(recorder, writerFactory); err != nil {
+		t.Fatal(err)
+	} else {
+		data := []byte("abc def")
+		if n, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		} else if n != len(data) {
+			t.Fatal("len")
+		} else {
+			w.Close()
+			if recorder.Header().Get(contentEncodingHeader) != writerFactory.ContentEncoding() {
+				t.Fatal(contentEncodingHeader)
+			}
+			recv := mustReadAll(t, flate.NewReader(recorder.Body))
+			if !bytes.Equal(recv, data) {
+				t.Fatal("Body")
+			}
+		}
+	}
+
+}
