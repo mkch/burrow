@@ -16,7 +16,7 @@ Encoding algorithm selection against "Accept-Encoding" is controlled by
 EncodingFactory interface. The DefaultEncodingFactory is the default implementation
 which selects the first known encoding.
 
-Implement othr content-encodings:
+Implement other content-encodings:
 
 1. Implement your own WriterFactory to create writers of that endocing.
 
