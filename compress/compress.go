@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 const contentTypeHeader = "Content-Type"
@@ -375,27 +376,22 @@ func (w *responseWriter) Reset(respw http.ResponseWriter, mimePolicy MimePolicy,
 	w.w.Reset(&w.mime, mimeDetectBufLen)
 }
 
-const responseWriterCacheSize = 1024
-
-var responseWriterCache = make(chan *responseWriter, responseWriterCacheSize)
+var responseWriterPool sync.Pool
 
 // newResponseWriterCached returns a cached responseWriter if any available, or newly created one.
 func newResponseWriterCached(w http.ResponseWriter, mimePolicy MimePolicy, factory WriterFactory, minSizeToCompress int) (writer *responseWriter) {
-	select {
-	case writer = <-responseWriterCache:
+	cached := responseWriterPool.Get()
+	if cached != nil {
+		writer = cached.(*responseWriter)
 		writer.Reset(w, mimePolicy, factory, minSizeToCompress)
-	default:
+	} else {
 		writer = newResponseWriter(w, mimePolicy, factory, minSizeToCompress)
 	}
 	return
 }
 
 func returnResponseWriterToCache(writer *responseWriter) {
-	select {
-	case responseWriterCache <- writer:
-	default:
-		// Cache is full. Let it go.
-	}
+	responseWriterPool.Put(writer)
 }
 
 func (w *responseWriter) Header() http.Header {
