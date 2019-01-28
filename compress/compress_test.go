@@ -48,6 +48,7 @@ func mustReadAll(t *testing.T, r io.Reader) []byte {
 }
 
 func TestResponseWriterDeflateNoCompress(t *testing.T) {
+	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
@@ -64,7 +65,7 @@ func TestResponseWriterDeflateNoCompress(t *testing.T) {
 	}
 
 	if enc := recorder.Header().Get(contentEncodingHeader); enc != "" {
-		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "")
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "")
 	}
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
 		t.Fatal("Body")
@@ -73,6 +74,7 @@ func TestResponseWriterDeflateNoCompress(t *testing.T) {
 }
 
 func TestResponseWriterDeflate(t *testing.T) {
+	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
@@ -89,7 +91,7 @@ func TestResponseWriterDeflate(t *testing.T) {
 	}
 
 	if enc := recorder.Header().Get(contentEncodingHeader); enc != "deflate" {
-		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "deflate")
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "deflate")
 	}
 	if !bytes.Equal(mustReadAll(t, flate.NewReader(recorder.Body)), data) {
 		t.Fatal("Body")
@@ -98,6 +100,7 @@ func TestResponseWriterDeflate(t *testing.T) {
 }
 
 func TestResponseWriterGzipNoCompress(t *testing.T) {
+	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte("some text to test.")
@@ -114,7 +117,7 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 	}
 
 	if enc := recorder.Header().Get(contentEncodingHeader); enc != "" {
-		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "")
+		t.Fatalf("Content-Encodeing: %#v vs %#v", enc, "")
 	}
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
 		t.Fatal("Body")
@@ -123,6 +126,7 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 }
 
 func TestResponseWriterGzip(t *testing.T) {
+	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
 	w := newResponseWriterCached(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
 	data := []byte(largeString)
@@ -139,11 +143,11 @@ func TestResponseWriterGzip(t *testing.T) {
 	}
 
 	if enc := recorder.Header().Get(contentEncodingHeader); enc != "gzip" {
-		t.Fatalf("Content-Eocnding: %#v vs %#v", enc, "gzip")
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "gzip")
 	}
 	decompressor, err := gzip.NewReader(recorder.Body)
 	if err != nil {
-		t.Fatalf("gzip.NewReade error: %v", err)
+		t.Fatalf("gzip.NewReader error: %v", err)
 	}
 	if !bytes.Equal(mustReadAll(t, decompressor), data) {
 		t.Fatal("Body")
@@ -151,13 +155,29 @@ func TestResponseWriterGzip(t *testing.T) {
 	returnResponseWriterToCache(w)
 }
 
-func TestCurl(t *testing.T) {
+func TestCurlGzip(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("curl"); err != nil {
 		t.Log(err)
 		return
 	}
 	testCurl(t, "gzip")
+}
+
+func TestCurlDeflate(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Log(err)
+		return
+	}
 	testCurl(t, "deflate")
+}
+func TestCurlNoCompress(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("curl"); err != nil {
+		t.Log(err)
+		return
+	}
 	testCurl(t, "")
 }
 
@@ -171,29 +191,18 @@ func testCurl(t *testing.T, encoding string) {
 		| |_//| \_/|| |_/\| |-||| | \||| |_//  | |/\|||  /_ | |_\\  \___ ||  /_ |    /| \// |  /_ |    /  |  \_ | \_/|| |  |||  __/|    /|  /_ \___ |\___ ||  /_ | |_/|
 		\____\\____/\____/\_/ \|\_/  \|\____\  \_/  \|\____\\____/  \____/\____\\_/\_\\__/  \____\\_/\_\  \____/\____/\_/  \|\_/   \_/\_\\____\\____/\____/\____\\____/
 																																										
-		
-		 _____ ____  _     ____  _      _____   _      _____ ____    ____  _____ ____  _     _____ ____    ____  ____  _      ____  ____  _____ ____  ____  _____ ____ 
-		/  __//  _ \/ \   /  _ \/ \  /|/  __/  / \  /|/  __//  _ \  / ___\/  __//  __\/ \ |\/  __//  __\  /   _\/  _ \/ \__/|/  __\/  __\/  __// ___\/ ___\/  __//  _ \
-		| |  _| / \|| |   | / \|| |\ ||| |  _  | |  |||  \  | | //  |    \|  \  |  \/|| | //|  \  |  \/|  |  /  | / \|| |\/|||  \/||  \/||  \  |    \|    \|  \  | | \|
-		| |_//| \_/|| |_/\| |-||| | \||| |_//  | |/\|||  /_ | |_\\  \___ ||  /_ |    /| \// |  /_ |    /  |  \_ | \_/|| |  |||  __/|    /|  /_ \___ |\___ ||  /_ | |_/|
-		\____\\____/\____/\_/ \|\_/  \|\____\  \_/  \|\____\\____/  \____/\____\\_/\_\\__/  \____\\_/\_\  \____/\____/\_/  \|\_/   \_/\_\\____\\____/\____/\____\\____/
-																																										
+																																					
 </pre>   
 
 </html>`
-	var svr *httptest.Server
-	var done = make(chan struct{})
 	var handler = func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.WriteString(w, art); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		go func() {
-			svr.Close()
-			done <- struct{}{}
-		}()
 	}
-	svr = httptest.NewServer(DefaultHandler(http.HandlerFunc(handler)))
+	svr := httptest.NewServer(NewHandler(http.HandlerFunc(handler), &HandlerConfig{MinSizeToCompress: len(art)}))
+	defer svr.Close()
 
 	var args []string
 	if encoding != "" {
@@ -216,9 +225,8 @@ func testCurl(t *testing.T, encoding string) {
 			}
 		} else {
 			if strings.Contains(headers, "Content-Encoding:") {
-				t.Fatal("Content-Encoding header should not be presentt")
+				t.Fatal("Content-Encoding header should not be present")
 			}
 		}
 	}
-	<-done
 }

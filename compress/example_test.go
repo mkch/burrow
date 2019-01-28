@@ -1,14 +1,15 @@
 package compress_test
 
 import (
-	"github.com/mkch/burrow/compress"
 	"net/http"
+
+	"github.com/mkch/burrow/compress"
 )
 
 func main() {
-	ExampleDefaultHandler()
+	ExampleNewHandler()
 }
 
-func ExampleDefaultHandler() {
-	http.ListenAndServe(":8080", compress.DefaultHandler(http.DefaultServeMux))
+func ExampleNewHandler() {
+	http.ListenAndServe(":8080", compress.NewHandler(http.DefaultServeMux, nil))
 }
