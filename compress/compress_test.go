@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -183,15 +182,7 @@ func TestCurlGzip(t *testing.T) {
 		t.Log(err)
 		return
 	}
-	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			testCurl(t, "gzip")
-			wg.Done()
-		}()
-	}
-	wg.Wait()
+	testCurl(t, "gzip")
 }
 
 func TestCurlDeflate(t *testing.T) {
@@ -200,15 +191,7 @@ func TestCurlDeflate(t *testing.T) {
 		t.Log(err)
 		return
 	}
-	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			testCurl(t, "deflate")
-			wg.Done()
-		}()
-	}
-	wg.Wait()
+	testCurl(t, "deflate")
 }
 func TestCurlNoCompress(t *testing.T) {
 	t.Parallel()
