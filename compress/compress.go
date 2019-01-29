@@ -560,6 +560,15 @@ func (w *compressResponseWriter) Write(p []byte) (int, error) {
 	return w.Writer.Write(p)
 }
 
+func (w *compressResponseWriter) Close() error {
+	if w.Writer != nil {
+		err := w.Writer.Close()
+		w.Writer = nil
+		return err
+	}
+	return nil
+}
+
 type hijackerCompressResponseWriter struct {
 	compressResponseWriter
 }
