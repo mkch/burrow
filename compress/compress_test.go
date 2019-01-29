@@ -48,6 +48,31 @@ func mustReadAll(t *testing.T, r io.Reader) []byte {
 	return p
 }
 
+func TestResponseWriterUserContentEncoding(t *testing.T) {
+	t.Parallel()
+	recorder := httptest.NewRecorder() // To gather response.
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, 1)
+	data := []byte("some text to test.")
+	w.Header().Set(contentEncodingHeader, "x")
+	n, err := w.Write(data)
+	if err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+	if n != len(data) {
+		t.Fatalf("Written len: %v vs %v", n, len(data))
+	}
+	if err = w.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "x" {
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "")
+	}
+	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
+		t.Fatal("Body")
+	}
+}
+
 func TestResponseWriterDeflateNoCompress(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
