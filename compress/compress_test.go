@@ -50,9 +50,10 @@ func mustReadAll(t *testing.T, r io.Reader) []byte {
 func TestResponseWriterUserContentEncoding(t *testing.T) {
 	t.Parallel()
 	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, 1)
-	data := []byte("some text to test.")
-	w.Header().Set(contentEncodingHeader, "x")
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, 0)
+	data := []byte("a")
+	const encoding = "some-encoding-unknown"
+	w.Header().Set(contentEncodingHeader, encoding)
 	n, err := w.Write(data)
 	if err != nil {
 		t.Fatalf("Write error: %v", err)
@@ -64,10 +65,34 @@ func TestResponseWriterUserContentEncoding(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	if enc := recorder.Header().Get(contentEncodingHeader); enc != "x" {
-		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "")
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != encoding {
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, encoding)
 	}
 	if !bytes.Equal(mustReadAll(t, recorder.Body), data) {
+		t.Fatal("Body")
+	}
+}
+
+func TestResponseWriterUserNoMinLengthLimit(t *testing.T) {
+	t.Parallel()
+	recorder := httptest.NewRecorder() // To gather response.
+	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultDeflateWriterFactory, 0)
+	data := []byte("a")
+	n, err := w.Write(data)
+	if err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+	if n != len(data) {
+		t.Fatalf("Written len: %v vs %v", n, len(data))
+	}
+	if err = w.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	if enc := recorder.Header().Get(contentEncodingHeader); enc != "deflate" {
+		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "deflate")
+	}
+	if !bytes.Equal(mustReadAll(t, flate.NewReader(recorder.Body)), data) {
 		t.Fatal("Body")
 	}
 }

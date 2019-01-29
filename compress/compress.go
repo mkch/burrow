@@ -223,15 +223,17 @@ type prefixWriteCloser interface {
 }
 
 type prefixDefinedWriter struct {
-	prefix    []byte
-	prefixLen int
-	w         prefixWriteCloser // The destination writer. Nil if pWriter was closed.
+	prefix        []byte
+	prefixLen     int
+	prefixWritten bool
+	w             prefixWriteCloser // The destination writer. Nil if pWriter was closed.
 }
 
 // newPrefixDefinedWriter creates a prefixDefinedWriter which writes the first prefixLen bytes
 // with writer.WritePrefix and writes any bytes following with writer.Write.
+// If prefixLen is 0, the data of first Write() of returned prefixDefinedWriter will be the prefix.
 func newPrefixDefinedWriter(writer prefixWriteCloser, prefixLen int) *prefixDefinedWriter {
-	if prefixLen <= 0 {
+	if prefixLen < 0 {
 		panic(fmt.Errorf("newPrefixDefinedWriter: invalid prefixLen %v", prefixLen))
 	}
 	if writer == nil {
@@ -247,7 +249,7 @@ func newPrefixDefinedWriter(writer prefixWriteCloser, prefixLen int) *prefixDefi
 // to the result of its original state from newPrefixDefinedWriter.
 // This permits reusing a prefixDefinedWriter rather than allocating a new one.
 func (w *prefixDefinedWriter) Reset(writer prefixWriteCloser, prefixLen int) {
-	if prefixLen <= 0 {
+	if prefixLen < 0 {
 		panic(fmt.Errorf("prefixDefinedWriter.Reset: invalid prefixLen %v", prefixLen))
 	}
 	if writer == nil {
@@ -267,28 +269,32 @@ func (w *prefixDefinedWriter) Write(p []byte) (int, error) {
 	if size == 0 {
 		return 0, nil
 	}
-	avail := w.prefixLen - len(w.prefix)
-	if avail == 0 {
-		// w.w.WritePrefix has been called already.
+	if w.prefixWritten {
 		return w.w.Write(p)
-	} else if avail > size {
+	}
+	if w.prefixLen == 0 {
+		w.prefixWritten = true
+		return w.w.WritePrefix(p)
+	}
+	avail := w.prefixLen - len(w.prefix)
+	if avail > size {
 		// Not enough bytes for prefix.
 		w.prefix = append(w.prefix, p...)
 		return size, nil
-	} else {
-		w.prefix = append(w.prefix, p[:avail]...)
-		n, err := w.w.WritePrefix(w.prefix)
-		pWritten := n - (w.prefixLen - avail)
-		if err != nil {
-			if pWritten < 0 {
-				// No data of p was written.
-				pWritten = 0
-			}
-			return pWritten, err
-		}
-		n, err = w.w.Write(p[avail:])
-		return n + pWritten, err
 	}
+	w.prefix = append(w.prefix, p[:avail]...)
+	n, err := w.w.WritePrefix(w.prefix)
+	w.prefixWritten = true
+	pWritten := n - (w.prefixLen - avail)
+	if err != nil {
+		if pWritten < 0 {
+			// No data of p was written.
+			pWritten = 0
+		}
+		return pWritten, err
+	}
+	n, err = w.w.Write(p[avail:])
+	return n + pWritten, err
 }
 
 func (w *prefixDefinedWriter) Close() (err error) {
@@ -511,6 +517,7 @@ type HandlerConfig struct {
 	EncodingFactory EncodingFactory
 	// MinSizeToCompress specifies the minimum length of response body that enables compression.
 	// Zero MinSizeToCompress is equivalent to DefaultMinSizeToCompress.
+	// -1 means no minimum length limit.
 	MinSizeToCompress int
 }
 
@@ -536,6 +543,10 @@ func NewHandler(h http.Handler, config *HandlerConfig) http.Handler {
 	}
 	if minSizeToCompress == 0 {
 		minSizeToCompress = DefaultMinSizeToCompress
+	} else if minSizeToCompress == -1 {
+		minSizeToCompress = 0
+	} else if minSizeToCompress < 0 {
+		panic(fmt.Errorf("NewHandler: invalid minSizeToCompress %v", minSizeToCompress))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if writerFactory := encodingFactory.NewWriterFactory(r.Header.Get(acceptEncodingHeader)); writerFactory != nil {
