@@ -174,31 +174,37 @@ func TestResponseWriterGzipNoCompress(t *testing.T) {
 
 func TestResponseWriterGzip(t *testing.T) {
 	t.Parallel()
-	recorder := httptest.NewRecorder() // To gather response.
-	w := newResponseWriter(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
-	data := []byte(largeString)
-	w.Header().Set(contentTypeHeader, "text/html")
-	n, err := w.Write(data)
-	if err != nil {
-		t.Fatalf("Write error: %v", err)
-	}
-	if n != len(data) {
-		t.Fatalf("Written len: %v vs %v", n, len(data))
-	}
-	if err = w.Close(); err != nil {
-		t.Fatalf("Close error: %v", err)
-	}
+	var f = func() {
+		recorder := httptest.NewRecorder() // To gather response.
+		w := newResponseWriter(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
+		defer w.Close()
+		data := []byte(largeString)
+		w.Header().Set(contentTypeHeader, "text/html")
+		n, err := w.Write(data)
+		if err != nil {
+			t.Fatalf("Write error: %v", err)
+		}
+		if n != len(data) {
+			t.Fatalf("Written len: %v vs %v", n, len(data))
+		}
+		if err = w.Close(); err != nil {
+			t.Fatalf("Close error: %v", err)
+		}
 
-	if enc := recorder.Header().Get(contentEncodingHeader); enc != "gzip" {
-		t.Fatalf("Content-Encoding: %#v vs %#v", enc, "gzip")
+		if enc := recorder.Header().Get(contentEncodingHeader); enc != "gzip" {
+			t.Fatalf("Content-Encoding: %#v vs %#v", enc, "gzip")
+		}
+		decompressor, err := gzip.NewReader(recorder.Body)
+		if err != nil {
+			t.Fatalf("gzip.NewReader error: %v", err)
+		}
+		if !bytes.Equal(mustReadAll(t, decompressor), data) {
+			t.Fatal("Body")
+		}
 	}
-	decompressor, err := gzip.NewReader(recorder.Body)
-	if err != nil {
-		t.Fatalf("gzip.NewReader error: %v", err)
-	}
-	if !bytes.Equal(mustReadAll(t, decompressor), data) {
-		t.Fatal("Body")
-	}
+	// To test Reset() methods.
+	f()
+	f()
 }
 
 func TestCurlGzip(t *testing.T) {

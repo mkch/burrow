@@ -261,6 +261,7 @@ func (w *prefixDefinedWriter) Reset(writer prefixWriteCloser, prefixLen int) {
 	} else {
 		w.prefix = make([]byte, 0, prefixLen)
 	}
+	w.prefixWritten = false
 	w.w = writer
 }
 
