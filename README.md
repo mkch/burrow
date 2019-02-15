@@ -15,7 +15,7 @@ Toolkit for go net/http.
 	)
 	
 	func main() {
-	    http.ListenAndServe(":8080", compress.DefaultHandler(http.DefaultServeMux))
+	    http.ListenAndServe(":8080", compress.NewHandler(http.DefaultServeMux, nil))
 	}
 ### * Session
 	package session_test
