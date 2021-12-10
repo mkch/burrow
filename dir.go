@@ -1,9 +1,8 @@
 package burrow
 
 import (
+	"io/fs"
 	"net/http"
-	"os"
-	"path"
 )
 
 // Type Dir is an enhanced version of http.Dir.
@@ -18,18 +17,17 @@ func (fs *Dir) Open(name string) (f http.File, err error) {
 	if err != nil {
 		return
 	}
-	if fs.AllowListDir {
-		return
-	}
+	return &dirFile{f, fs.AllowListDir}, nil
+}
 
-	var fileInfo os.FileInfo
-	if fileInfo, err = f.Stat(); err != nil {
-		return nil, err
+type dirFile struct {
+	http.File
+	AllowListDir bool
+}
+
+func (f *dirFile) Readdir(count int) (fi []fs.FileInfo, err error) {
+	if !f.AllowListDir {
+		return nil, nil
 	}
-	fileInfo.Mode()
-	if fileInfo.IsDir() {
-		index := path.Join(name, "index.html")
-		f, err = fs.Dir.Open(index)
-	}
-	return
+	return f.File.Readdir(count)
 }
