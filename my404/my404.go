@@ -1,3 +1,4 @@
+// Package my4040 provides support for setting customized http 404 handler.
 package my404
 
 import (
