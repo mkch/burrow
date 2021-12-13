@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/flate"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -403,6 +404,7 @@ type responseWriter struct {
 	mime     mimeWriter
 	cw       *prefixDefinedWriter
 	compress compressWriter
+	closed   bool
 }
 
 const mimeDetectBufLen = 512
@@ -460,22 +462,31 @@ func (w *responseWriter) Reset(respw http.ResponseWriter, mimePolicy MimePolicy,
 	w.cw.Reset(&w.compress, minSizeToCompress)
 	w.mime.Reset(w.Header(), w.cw)
 	w.w.Reset(&w.mime, mimeDetectBufLen)
+	w.closed = false
 }
 func (w *responseWriter) Header() http.Header {
 	return w.responseWriter.Header()
 }
 
+var errAlreadyClosed = errors.New("already closed")
+
+// close Closes w but does NOT put w into responseWriterPool.
+// hijackerResponseWriter embeds responseWriter, whose Close() method
+// calls this method and put the receiver into its own pool.
 func (w *responseWriter) close() (err error) {
-	if w.w == nil {
-		return
+	if w.closed {
+		return errAlreadyClosed
 	}
 	err = w.w.Close()
+	w.closed = true
 	return
 }
 
 func (w *responseWriter) Close() (err error) {
 	err = w.close()
-	responseWriterPool.Put(w)
+	if err != errAlreadyClosed { // `err == errAlreadyClosed` means w was already putted into pool.
+		responseWriterPool.Put(w)
+	}
 	return
 }
 
@@ -503,7 +514,9 @@ func (w *hijackerResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (w *hijackerResponseWriter) Close() (err error) {
 	err = w.close()
-	hijackerResponseWriterPool.Put(w)
+	if err != errAlreadyClosed { // `err == errAlreadyClosed` means w was already putted into pool.
+		hijackerResponseWriterPool.Put(w)
+	}
 	return
 }
 

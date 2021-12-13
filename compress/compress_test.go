@@ -177,7 +177,11 @@ func TestResponseWriterGzip(t *testing.T) {
 	var f = func() {
 		recorder := httptest.NewRecorder() // To gather response.
 		w := newResponseWriter(recorder, DefaultMimePolicy, DefaultGzipWriterFactory, DefaultMinSizeToCompress)
-		defer w.Close()
+		defer func() {
+			if err := w.Close(); err != errAlreadyClosed {
+				t.Fatalf("Close error: %v vs %v", err, errAlreadyClosed)
+			}
+		}()
 		data := []byte(largeString)
 		w.Header().Set(contentTypeHeader, "text/html")
 		n, err := w.Write(data)
@@ -263,7 +267,7 @@ func testCurl(t *testing.T, encoding string) {
 	args = append(args, svr.URL)
 
 	if out, err := exec.Command("curl", args...).Output(); err != nil {
-		t.Fatal(err)
+		t.Fatal("[curl " + strings.Join(args, " ") + "] " + err.Error())
 	} else {
 		output := string(out)
 		i := strings.Index(output, art)
