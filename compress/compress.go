@@ -632,10 +632,7 @@ func NewResponseWriter(w http.ResponseWriter, writerFactory WriterFactory) (Resp
 			compressResponseWriter: writer,
 		}
 	} else {
-		result = &compressResponseWriter{
-			ResponseWriter: w,
-			Writer:         compresser,
-		}
+		result = &writer
 	}
 	writer.Header().Set(contentEncodingHeader, writerFactory.ContentEncoding())
 	return result, nil
