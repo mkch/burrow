@@ -465,12 +465,12 @@ func newResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFacto
 
 }
 
-func (w *responseWriter) Reset(respw http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) {
-	w.responseWriter = respw
+func (w *responseWriter) Reset(writer http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) {
+	w.responseWriter = writer
 	w.mimePolicy = mimePolicy
 	w.writerFactory = writerFactory
 
-	w.compress.Reset(writerFactory, respw, mimePolicy, minSizeToCompress)
+	w.compress.Reset(writerFactory, writer, mimePolicy, minSizeToCompress)
 	w.cw.Reset(&w.compress, minSizeToCompress)
 	w.mime.Reset(w.Header(), w.cw)
 	w.w.Reset(&w.mime, mimeDetectBufLen)
