@@ -67,14 +67,20 @@ type WriterFactory interface {
 	ContentEncoding() string
 }
 
-type pooledGzipWriter struct {
-	Writer
+type pooledGzipWriter gzip.Writer
+
+func (w *pooledGzipWriter) Write(b []byte) (int, error) {
+	return (*gzip.Writer)(w).Write(b)
 }
 
-func (w pooledGzipWriter) Close() (err error) {
-	err = w.Writer.Close()
+func (w *pooledGzipWriter) Close() (err error) {
+	err = (*gzip.Writer)(w).Close()
 	(*sync.Pool)(&defaultGzipWriterFactory).Put(w)
 	return
+}
+
+func (w *pooledGzipWriter) Reset(writer io.Writer) {
+	(*gzip.Writer)(w).Reset(writer)
 }
 
 type pooledGzipWriterFactory sync.Pool
@@ -85,7 +91,7 @@ func (f *pooledGzipWriterFactory) NewWriter(w io.Writer) (Writer, error) {
 		result.Reset(w)
 		return result, nil
 	}
-	return pooledGzipWriter{Writer: gzip.NewWriter(w)}, nil
+	return (*pooledGzipWriter)(gzip.NewWriter(w)), nil
 }
 
 func (*pooledGzipWriterFactory) ContentEncoding() string {
@@ -98,14 +104,20 @@ var defaultGzipWriterFactory pooledGzipWriterFactory
 // DefaultGzipWriterFactory is the default WriterFactory of "gzip" encoding.
 var DefaultGzipWriterFactory = &defaultGzipWriterFactory
 
-type pooledDeflateWriter struct {
-	Writer
+type pooledDeflateWriter flate.Writer
+
+func (w *pooledDeflateWriter) Write(b []byte) (int, error) {
+	return (*flate.Writer)(w).Write(b)
 }
 
-func (w pooledDeflateWriter) Close() (err error) {
-	err = w.Writer.Close()
+func (w *pooledDeflateWriter) Close() (err error) {
+	err = (*flate.Writer)(w).Close()
 	(*sync.Pool)(&defaultDeflateWriterFactory).Put(w)
 	return
+}
+
+func (w *pooledDeflateWriter) Reset(writer io.Writer) {
+	(*flate.Writer)(w).Reset(writer)
 }
 
 type pooledDeflateWriterFactory sync.Pool
@@ -120,7 +132,7 @@ func (f *pooledDeflateWriterFactory) NewWriter(w io.Writer) (Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pooledDeflateWriter{Writer: writer}, nil
+	return (*pooledDeflateWriter)(writer), nil
 }
 
 func (*pooledDeflateWriterFactory) ContentEncoding() string {
