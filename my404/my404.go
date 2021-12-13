@@ -38,8 +38,10 @@ func (w *responseWriter) Original() http.ResponseWriter {
 // a 404 status code was written to w.
 func Handler(h http.Handler, handle404 func(w io.Writer, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(
-			internal.WrapResponseWriter(&responseWriter{ResponseWriter: w, request: r, handler: handle404}),
-			r)
+		var writer http.ResponseWriter = &responseWriter{ResponseWriter: w, request: r, handler: handle404}
+		if h, ok := w.(http.Hijacker); ok {
+			writer = &internal.HijackResponseWriter{ResponseWriter: writer, Hijacker: h}
+		}
+		h.ServeHTTP(writer, r)
 	})
 }

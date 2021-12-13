@@ -10,10 +10,10 @@ import (
 	"github.com/mkch/burrow/my404"
 )
 
-const NotFoundPage = "<html> The gohper is not here!</html>"
-const NotFoundPage2 = "<html> The gohper is not here 2!</html>"
+const NotFoundPage = "<html> The gopher is not here!</html>"
+const NotFoundPage2 = "<html> The gopher is not here 2!</html>"
 
-func TestHook(t *testing.T) {
+func TestHandler(t *testing.T) {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(my404.Handler(mux, func(w io.Writer, r *http.Request) {
 		switch r.URL.Path {

@@ -16,7 +16,7 @@ func ExampleHandler() {
 		})
 
 	handle404 := func(w io.Writer, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("404 Gohper is not here: %s", r.URL)))
+		w.Write([]byte(fmt.Sprintf("404 Gopher is not here: %s", r.URL)))
 	}
 	handler := my404.Handler(http.DefaultServeMux, handle404)
 	log.Fatal(http.ListenAndServe("localhost:8181", handler))
