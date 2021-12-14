@@ -39,7 +39,7 @@ func (f MimePolicyFunc) AllowCompress(mime string) bool {
 
 // DefaultMimePolicy is the default MimePolicy that allows some of the common
 // data types which should be compressed.
-var DefaultMimePolicy = defaultMimePolicy
+var DefaultMimePolicy MimePolicy = defaultMimePolicy
 var defaultMimePolicy = MimePolicyFunc(func(mime string) bool {
 	switch mime {
 	case
@@ -61,7 +61,7 @@ type Writer interface {
 	Reset(w io.Writer)
 }
 
-// WriterFactory creates new WriteCloser.
+// WriterFactory creates new Writers.
 type WriterFactory interface {
 	NewWriter(io.Writer) (Writer, error)
 	ContentEncoding() string
@@ -102,7 +102,7 @@ func (*pooledGzipWriterFactory) ContentEncoding() string {
 var defaultGzipWriterFactory pooledGzipWriterFactory
 
 // DefaultGzipWriterFactory is the default WriterFactory of "gzip" encoding.
-var DefaultGzipWriterFactory = &defaultGzipWriterFactory
+var DefaultGzipWriterFactory WriterFactory = &defaultGzipWriterFactory
 
 type pooledDeflateWriter flate.Writer
 
@@ -143,7 +143,7 @@ func (*pooledDeflateWriterFactory) ContentEncoding() string {
 var defaultDeflateWriterFactory pooledDeflateWriterFactory
 
 // DefaultDeflateWriterFactory is the default WriterFactory of "deflate" encoding.
-var DefaultDeflateWriterFactory = &defaultDeflateWriterFactory
+var DefaultDeflateWriterFactory WriterFactory = &defaultDeflateWriterFactory
 
 // EncodingFactory is the interfact to create new
 // WriterFactory according to the "Accept-Encoding".
@@ -168,7 +168,7 @@ func (f EncodingFactoryFunc) NewWriterFactory(acceptEncoding string) WriterFacto
 // DefaultEncodingFactory is the default EncodingFactory for "gzip" and "deflate" encoding.
 // This factory uses the position in string as the priority of encoding selection.
 // It selects the first known encoding.
-var DefaultEncodingFactory = defaultEncodingFactory
+var DefaultEncodingFactory EncodingFactory = defaultEncodingFactory
 var defaultEncodingFactory = EncodingFactoryFunc(func(acceptEncoding string) WriterFactory {
 	var l = len(acceptEncoding)
 	var b int = -1
@@ -231,7 +231,7 @@ var defaultEncodingFactory = EncodingFactoryFunc(func(acceptEncoding string) Wri
 type prefixWriteCloser interface {
 	io.WriteCloser
 	// WritePrefix writes the prefix(the first part of data).
-	// It should be called zero or one time before any call to Writer.Write.
+	// It should be called zero or one time before any call to Write.
 	WritePrefix([]byte) (n int, err error)
 }
 
@@ -407,6 +407,7 @@ type ResponseWriter interface {
 	io.Closer
 }
 
+
 type responseWriter struct {
 	responseWriter http.ResponseWriter
 	mimePolicy     MimePolicy
@@ -442,7 +443,7 @@ func internalNewHijackerResponseWriter(w http.ResponseWriter, mimePolicy MimePol
 var responseWriterPool sync.Pool
 var hijackerResponseWriterPool sync.Pool
 
-// newResponseWriterCached returns a cached responseWriter if any available, or newly created one.
+// newResponseWriter returns a cached responseWriter if any available, or a newly created one.
 func newResponseWriter(w http.ResponseWriter, mimePolicy MimePolicy, writerFactory WriterFactory, minSizeToCompress int) ResponseWriter {
 	if _, ok := w.(http.Hijacker); ok {
 		// w is an http.Hijacker, the return value must be also a hijackerResponseWriter.
